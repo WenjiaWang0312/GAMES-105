@@ -30,9 +30,37 @@ def part1_calculate_T_pose(bvh_file_path):
     Tips:
         joint_name顺序应该和bvh一致
     """
-    joint_name = None
-    joint_parent = None
-    joint_offset = None
+    # from IPython import embed
+    # embed(header='34')
+    with open(bvh_file_path, 'r') as f:
+        content = f.readlines()
+    joint_index = 0
+    joint_name = ['RootJoint']
+    joint_indent = [0]
+    joint_parent = [-1]
+    joint_offset = [np.zeros((1, 3))]
+    for i in range(len(content)):
+        if 'JOINT' in content[i] or 'End Site' in content[i]:
+            joint_index += 1
+            if 'JOINT' in content[i]:
+                joint_name.append(content[i].split('JOINT')[1].replace('\n', '').replace(' ', ''))
+                curr_indent = content[i].index('JOINT')/4
+            elif 'End Site' in content[i]:
+                joint_name.append(joint_name[joint_index-1] + '_end')
+                curr_indent = content[i].index('End Site')/4
+
+            joint_indent.append(curr_indent)
+            reversed_list = joint_indent[::-1]
+            curr_parent = reversed_list.index(curr_indent-1)
+            curr_parent = len(joint_indent) - 1 - curr_parent
+            joint_parent.append(curr_parent)
+            curr_offset = np.array(content[i+2].split('  ')[-3:]).astype(np.float32)
+            joint_offset.append(curr_offset[None])
+    # joint_name = None
+    # joint_parent = None
+    # joint_offset = None
+    joint_offset = np.concatenate(joint_offset, 0)
+
     return joint_name, joint_parent, joint_offset
 
 
