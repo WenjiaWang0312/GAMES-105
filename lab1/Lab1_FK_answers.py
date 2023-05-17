@@ -76,8 +76,30 @@ def part2_forward_kinematics(joint_name, joint_parent, joint_offset, motion_data
         1. joint_orientations的四元数顺序为(x, y, z, w)
         2. from_euler时注意使用大写的XYZ
     """
-    joint_positions = None
-    joint_orientations = None
+    translation = motion_data[frame_id, :3]
+    joint_positions = np.zeros((len(joint_name), 3))
+    joint_positions[0] = translation
+    joint_orientations = np.zeros((len(joint_name), 3, 3))
+
+    rotation_index = []
+    for i, joint in enumerate(joint_name):
+        if 'end' not in joint:
+            rotation_index.append(i)
+    rotation = motion_data[frame_id][3:].reshape(-1, 3)
+    # rotation[3:] *=0
+    rotation = R.from_euler('XYZ', rotation, degrees=True).as_matrix()
+    joint_orientations[0] = rotation[0]
+    for curr_i, parent_i in enumerate(joint_parent):
+        if parent_i != -1:
+            if curr_i in rotation_index:
+                curr_i_rot = rotation_index.index(curr_i)
+                joint_orientations[curr_i] = rotation[curr_i_rot] @ joint_orientations[parent_i]
+            else:
+                joint_orientations[curr_i] = joint_orientations[parent_i]
+            joint_positions[curr_i] = joint_positions[parent_i] + joint_orientations[parent_i] @ joint_offset[curr_i]
+
+
+    joint_orientations = R.from_matrix(joint_orientations).as_quat()
     return joint_positions, joint_orientations
 
 
