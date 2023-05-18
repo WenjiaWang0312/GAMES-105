@@ -117,8 +117,7 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
         两个bvh的joint name顺序可能不一致哦(
         as_euler时也需要大写的XYZ
     """
-    # from IPython import embed
-    # embed(header='117')
+
     joint_name1, joint_parent1, joint_offset1 = part1_calculate_T_pose(
         T_pose_bvh_path)
     joint_name2, joint_parent2, joint_offset2 = part1_calculate_T_pose(
@@ -136,10 +135,6 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
     d2['RootJoint'] = ''
     assert d1 == d2
 
-    # curr_rotation1 = np.zeros((len(joint_name1), 3))
-    # curr_rotation2 = np.zeros((len(joint_name2), 3))
-    # joint_orient1 = rotation[0]
-
     def norm_vec(vec):
         return vec / np.linalg.norm(vec)
 
@@ -149,6 +144,87 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
         z = norm_vec(np.cross(vec, y))
         y = np.cross(vec, z)
         return np.array([vec, y, z])
+
+    rotation_index1 = []
+    for i, joint in enumerate(joint_name1):
+        if 'end' not in joint:
+            rotation_index1.append(i)
+
+    rotation_index2 = []
+    for i, joint in enumerate(joint_name2):
+        if 'end' not in joint:
+            rotation_index2.append(i)
+
+    motion_data = load_motion_data(A_pose_bvh_path)
+
+    new_motion_data = motion_data.copy()
+    rot_offsets = []
+    for i, j_name1 in enumerate(joint_name1):
+        if joint_parent1[i] != -1:
+            i2 = joint_name2.index(j_name1)
+            if np.isclose(norm_vec(joint_offset1[i]),
+                          norm_vec(joint_offset2[i2]),
+                          atol=1e-2,
+                          rtol=1e-2).all():
+                rot_offset = np.eye(3)
+            else:
+                abs_rot_t = get_rotmat_pointy(joint_offset1[i])
+                abs_rot_t_parent = get_rotmat_pointy(
+                    joint_offset1[joint_parent1[i]])
+                abs_rot_a = get_rotmat_pointy(joint_offset2[i2])
+                abs_rot_a_parent = get_rotmat_pointy(
+                    joint_offset2[joint_parent2[i2]])
+                rel_rot_t = abs_rot_t_parent.T @ abs_rot_t
+                rel_rot_a = abs_rot_a_parent.T @ abs_rot_a
+                rot_offset = rel_rot_a.T @ rel_rot_t
+
+            curr_i_rot1 = rotation_index1.index(joint_parent1[i])
+            curr_i_rot2 = rotation_index2.index(joint_parent2[i2])
+            num_frame = motion_data.shape[0]
+            curr_joint_rotation = R.from_euler(
+                'XYZ',
+                motion_data[:, 3 + 3 * curr_i_rot2:6 + 3 * curr_i_rot2],
+                degrees=True).as_matrix() @ rot_offset[None].repeat(
+                    num_frame, 0)
+
+            new_motion_data[:, 3 + 3 * curr_i_rot1:6 +
+                            3 * curr_i_rot1] = R.from_matrix(
+                                curr_joint_rotation).as_euler('XYZ',
+                                                              degrees=True)
+            rot_offsets.append(rot_offset)
+
+    where_are_NaNs = np.isnan(new_motion_data)
+    new_motion_data[where_are_NaNs] = 0
+
+    return new_motion_data
+
+
+def part3_retarget_func_easy(T_pose_bvh_path, A_pose_bvh_path):
+    """
+    将 A-pose的bvh重定向到T-pose上
+    输入: 两个bvh文件的路径
+    输出: 
+        motion_data: np.ndarray，形状为(N,X)的numpy数组，其中N为帧数，X为Channel数。retarget后的运动数据
+    Tips:
+        两个bvh的joint name顺序可能不一致哦(
+        as_euler时也需要大写的XYZ
+    """
+    joint_name1, joint_parent1, joint_offset1 = part1_calculate_T_pose(
+        T_pose_bvh_path)
+    joint_name2, joint_parent2, joint_offset2 = part1_calculate_T_pose(
+        A_pose_bvh_path)
+    parent1 = []
+    for i in joint_parent1:
+        parent1.append(joint_name1[i])
+    parent2 = []
+    for i in joint_parent2:
+        parent2.append(joint_name2[i])
+
+    d1 = dict(zip(joint_name1, parent1))
+    d2 = dict(zip(joint_name2, parent2))
+    d1['RootJoint'] = ''
+    d2['RootJoint'] = ''
+    assert d1 == d2
 
     rotation_index1 = []
     for i, joint in enumerate(joint_name1):
@@ -177,20 +253,7 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
                                       np.array([0, 0, angle]),
                                       degrees=True).as_matrix()
             i2 = joint_name2.index(j_name1)
-            # abs_rot_t = get_rotmat_pointy(joint_offset1[i])
-            # abs_rot_t_parent = get_rotmat_pointy(
-            #     joint_offset1[joint_parent1[i]])
-            # abs_rot_a = get_rotmat_pointy(joint_offset2[i2])
-            # abs_rot_a_parent = get_rotmat_pointy(
-            #     joint_offset2[joint_parent2[i2]])
-            # rel_rot_t = abs_rot_t @ abs_rot_t_parent.T
-            # rel_rot_a = abs_rot_a @ abs_rot_a_parent.T
-            # rot_offset = rel_rot_a @ rel_rot_t.T
 
-            # from IPython import embed
-            # embed(header='117')
-            # curr_i_rot1 = rotation_index1.index(i)
-            # curr_i_rot2 = i2
             curr_i_rot1 = rotation_index1.index(i)
             curr_i_rot2 = rotation_index2.index(i2)
             num_frame = motion_data.shape[0]
@@ -204,21 +267,9 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
                             3 * curr_i_rot1] = R.from_matrix(
                                 curr_joint_rotation).as_euler('XYZ',
                                                               degrees=True)
-            # new_motion_data[:, 3 + 3 * curr_i_rot1:6 +
-            #                 3 * curr_i_rot1] = motion_data[:, 3 +
-            #                                                3 * curr_i_rot2:6 +
-            #                                                3 * curr_i_rot2]
             rot_offsets.append(rot_offset)
 
-            # new_motion_data[:, 3 + 3 * curr_i_rot2:6 +
-            #                 3 * curr_i_rot2] -= np.array(
-            #                     [0, 0, angle])[None].repeat(num_frame, 0)
-    # from IPython import embed
-    # embed(header='117')
-    # motion_data = None
     where_are_NaNs = np.isnan(new_motion_data)
     new_motion_data[where_are_NaNs] = 0
-    # motion_data[0, 42:45] = 0 #16-13
-    # motion_data[0, 54:57] = 0 #21-17
+
     return new_motion_data
-    # return motion_data
