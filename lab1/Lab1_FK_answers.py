@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+
 def load_motion_data(bvh_file_path):
     """part2 辅助函数，读取bvh文件"""
     with open(bvh_file_path, 'r') as f:
@@ -9,14 +10,13 @@ def load_motion_data(bvh_file_path):
             if lines[i].startswith('Frame Time'):
                 break
         motion_data = []
-        for line in lines[i+1:]:
+        for line in lines[i + 1:]:
             data = [float(x) for x in line.split()]
             if len(data) == 0:
                 break
-            motion_data.append(np.array(data).reshape(1,-1))
+            motion_data.append(np.array(data).reshape(1, -1))
         motion_data = np.concatenate(motion_data, axis=0)
     return motion_data
-
 
 
 def part1_calculate_T_pose(bvh_file_path):
@@ -43,18 +43,20 @@ def part1_calculate_T_pose(bvh_file_path):
         if 'JOINT' in content[i] or 'End Site' in content[i]:
             joint_index += 1
             if 'JOINT' in content[i]:
-                joint_name.append(content[i].split('JOINT')[1].replace('\n', '').replace(' ', ''))
-                curr_indent = content[i].index('JOINT')/4
+                joint_name.append(content[i].split('JOINT')[1].replace(
+                    '\n', '').replace(' ', ''))
+                curr_indent = content[i].index('JOINT') / 4
             elif 'End Site' in content[i]:
-                joint_name.append(joint_name[joint_index-1] + '_end')
-                curr_indent = content[i].index('End Site')/4
+                joint_name.append(joint_name[joint_index - 1] + '_end')
+                curr_indent = content[i].index('End Site') / 4
 
             joint_indent.append(curr_indent)
             reversed_list = joint_indent[::-1]
-            curr_parent = reversed_list.index(curr_indent-1)
+            curr_parent = reversed_list.index(curr_indent - 1)
             curr_parent = len(joint_indent) - 1 - curr_parent
             joint_parent.append(curr_parent)
-            curr_offset = np.array(content[i+2].split('  ')[-3:]).astype(np.float32)
+            curr_offset = np.array(content[i + 2].split('  ')[-3:]).astype(
+                np.float32)
             joint_offset.append(curr_offset[None])
     # joint_name = None
     # joint_parent = None
@@ -64,7 +66,8 @@ def part1_calculate_T_pose(bvh_file_path):
     return joint_name, joint_parent, joint_offset
 
 
-def part2_forward_kinematics(joint_name, joint_parent, joint_offset, motion_data, frame_id):
+def part2_forward_kinematics(joint_name, joint_parent, joint_offset,
+                             motion_data, frame_id):
     """请填写以下内容
     输入: part1 获得的关节名字，父节点列表，偏移量列表
         motion_data: np.ndarray，形状为(N,X)的numpy数组，其中N为帧数，X为Channel数
@@ -93,11 +96,12 @@ def part2_forward_kinematics(joint_name, joint_parent, joint_offset, motion_data
         if parent_i != -1:
             if curr_i in rotation_index:
                 curr_i_rot = rotation_index.index(curr_i)
-                joint_orientations[curr_i] = rotation[curr_i_rot] @ joint_orientations[parent_i]
+                joint_orientations[curr_i] = joint_orientations[
+                    parent_i] @ rotation[curr_i_rot]
             else:
                 joint_orientations[curr_i] = joint_orientations[parent_i]
-            joint_positions[curr_i] = joint_positions[parent_i] + joint_orientations[parent_i] @ joint_offset[curr_i]
-
+            joint_positions[curr_i] = joint_positions[
+                parent_i] + joint_orientations[parent_i] @ joint_offset[curr_i]
 
     joint_orientations = R.from_matrix(joint_orientations).as_quat()
     return joint_positions, joint_orientations
@@ -113,5 +117,108 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
         两个bvh的joint name顺序可能不一致哦(
         as_euler时也需要大写的XYZ
     """
-    motion_data = None
-    return motion_data
+    # from IPython import embed
+    # embed(header='117')
+    joint_name1, joint_parent1, joint_offset1 = part1_calculate_T_pose(
+        T_pose_bvh_path)
+    joint_name2, joint_parent2, joint_offset2 = part1_calculate_T_pose(
+        A_pose_bvh_path)
+    parent1 = []
+    for i in joint_parent1:
+        parent1.append(joint_name1[i])
+    parent2 = []
+    for i in joint_parent2:
+        parent2.append(joint_name2[i])
+
+    d1 = dict(zip(joint_name1, parent1))
+    d2 = dict(zip(joint_name2, parent2))
+    d1['RootJoint'] = ''
+    d2['RootJoint'] = ''
+    assert d1 == d2
+
+    # curr_rotation1 = np.zeros((len(joint_name1), 3))
+    # curr_rotation2 = np.zeros((len(joint_name2), 3))
+    # joint_orient1 = rotation[0]
+
+    def norm_vec(vec):
+        return vec / np.linalg.norm(vec)
+
+    def get_rotmat_pointy(vec):
+        vec = norm_vec(vec)
+        y = np.array([0, 1, 0])
+        z = norm_vec(np.cross(vec, y))
+        y = np.cross(vec, z)
+        return np.array([vec, y, z])
+
+    rotation_index1 = []
+    for i, joint in enumerate(joint_name1):
+        if 'end' not in joint:
+            rotation_index1.append(i)
+
+    rotation_index2 = []
+    for i, joint in enumerate(joint_name2):
+        if 'end' not in joint:
+            rotation_index2.append(i)
+
+    motion_data = load_motion_data(A_pose_bvh_path)
+
+    new_motion_data = motion_data.copy()
+    rot_offsets = []
+    for i, j_name1 in enumerate(joint_name1):
+        if joint_parent1[i] != -1 and 'end' not in j_name1:
+            if 'Shoulder' in j_name1:
+                if j_name1 == 'rShoulder':
+                    angle = 45
+                else:
+                    angle = -45
+            else:
+                angle = 0
+            rot_offset = R.from_euler('XYZ',
+                                      np.array([0, 0, angle]),
+                                      degrees=True).as_matrix()
+            i2 = joint_name2.index(j_name1)
+            # abs_rot_t = get_rotmat_pointy(joint_offset1[i])
+            # abs_rot_t_parent = get_rotmat_pointy(
+            #     joint_offset1[joint_parent1[i]])
+            # abs_rot_a = get_rotmat_pointy(joint_offset2[i2])
+            # abs_rot_a_parent = get_rotmat_pointy(
+            #     joint_offset2[joint_parent2[i2]])
+            # rel_rot_t = abs_rot_t @ abs_rot_t_parent.T
+            # rel_rot_a = abs_rot_a @ abs_rot_a_parent.T
+            # rot_offset = rel_rot_a @ rel_rot_t.T
+
+            # from IPython import embed
+            # embed(header='117')
+            # curr_i_rot1 = rotation_index1.index(i)
+            # curr_i_rot2 = i2
+            curr_i_rot1 = rotation_index1.index(i)
+            curr_i_rot2 = rotation_index2.index(i2)
+            num_frame = motion_data.shape[0]
+            curr_joint_rotation = R.from_euler(
+                'XYZ',
+                motion_data[:, 3 + 3 * curr_i_rot2:6 + 3 * curr_i_rot2],
+                degrees=True).as_matrix() @ rot_offset[None].repeat(
+                    num_frame, 0)
+
+            new_motion_data[:, 3 + 3 * curr_i_rot1:6 +
+                            3 * curr_i_rot1] = R.from_matrix(
+                                curr_joint_rotation).as_euler('XYZ',
+                                                              degrees=True)
+            # new_motion_data[:, 3 + 3 * curr_i_rot1:6 +
+            #                 3 * curr_i_rot1] = motion_data[:, 3 +
+            #                                                3 * curr_i_rot2:6 +
+            #                                                3 * curr_i_rot2]
+            rot_offsets.append(rot_offset)
+
+            # new_motion_data[:, 3 + 3 * curr_i_rot2:6 +
+            #                 3 * curr_i_rot2] -= np.array(
+            #                     [0, 0, angle])[None].repeat(num_frame, 0)
+    # from IPython import embed
+    # embed(header='117')
+    # motion_data = None
+    where_are_NaNs = np.isnan(new_motion_data)
+    new_motion_data[where_are_NaNs] = 0
+    # motion_data[0, 42:45] = 0 #16-13
+    # motion_data[0, 54:57] = 0 #21-17
+    return new_motion_data
+    # return motion_data
