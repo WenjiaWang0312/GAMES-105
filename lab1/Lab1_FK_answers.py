@@ -138,12 +138,21 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
     def norm_vec(vec):
         return vec / np.linalg.norm(vec)
 
-    def get_rotmat_pointy(vec):
-        vec = norm_vec(vec)
-        y = np.array([0, 1, 0])
-        z = norm_vec(np.cross(vec, y))
-        y = np.cross(vec, z)
-        return np.array([vec, y, z])
+    def rodrigus_formula(vec1, vec2):
+        """
+        旋转向量转旋转矩阵
+        """
+        vec1 = norm_vec(vec1)
+        vec2 = norm_vec(vec2)
+        if np.allclose(vec1, vec2):
+            return np.eye(3)
+        else:
+            axis = np.cross(vec1, vec2)
+            axis = axis / np.linalg.norm(axis)
+            angle = np.arccos(
+                np.dot(vec1, vec2) /
+                (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
+            return R.from_rotvec(axis * angle).as_matrix()
 
     rotation_index1 = []
     for i, joint in enumerate(joint_name1):
@@ -158,25 +167,23 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
     motion_data = load_motion_data(A_pose_bvh_path)
 
     new_motion_data = motion_data.copy()
-    rot_offsets = []
     for i, j_name1 in enumerate(joint_name1):
         if joint_parent1[i] != -1:
+
             i2 = joint_name2.index(j_name1)
+
             if np.isclose(norm_vec(joint_offset1[i]),
                           norm_vec(joint_offset2[i2]),
                           atol=1e-2,
                           rtol=1e-2).all():
                 rot_offset = np.eye(3)
             else:
-                abs_rot_t = get_rotmat_pointy(joint_offset1[i])
-                abs_rot_t_parent = get_rotmat_pointy(
-                    joint_offset1[joint_parent1[i]])
-                abs_rot_a = get_rotmat_pointy(joint_offset2[i2])
-                abs_rot_a_parent = get_rotmat_pointy(
-                    joint_offset2[joint_parent2[i2]])
-                rel_rot_t = abs_rot_t_parent.T @ abs_rot_t
-                rel_rot_a = abs_rot_a_parent.T @ abs_rot_a
-                rot_offset = rel_rot_a.T @ rel_rot_t
+                rel_rot_t = rodrigus_formula(joint_offset1[i],
+                                             joint_offset1[joint_parent1[i]])
+                rel_rot_a = rodrigus_formula(joint_offset2[i2],
+                                             joint_offset2[joint_parent2[i2]])
+
+                rot_offset = rel_rot_t @ rel_rot_a.T
 
             curr_i_rot1 = rotation_index1.index(joint_parent1[i])
             curr_i_rot2 = rotation_index2.index(joint_parent2[i2])
@@ -191,7 +198,6 @@ def part3_retarget_func(T_pose_bvh_path, A_pose_bvh_path):
                             3 * curr_i_rot1] = R.from_matrix(
                                 curr_joint_rotation).as_euler('XYZ',
                                                               degrees=True)
-            rot_offsets.append(rot_offset)
 
     where_are_NaNs = np.isnan(new_motion_data)
     new_motion_data[where_are_NaNs] = 0
