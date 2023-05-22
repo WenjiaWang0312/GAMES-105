@@ -141,16 +141,13 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations,
                     kinematic_tree[i] = new_p_id
                     protected_ids.append(i)
         kinematic_tree[path[0]] = -1
-        # if out_of_stretch:
-        #     return cyclic_coordinate_descent_ik(joint_positions, joint_orientations, joint_parent, path,
-        #        target_pose, out_of_stretch)
             
         # from IPython import embed
         # embed()
         if kinematic_tree[0] in protected_ids:
             protected_ids.remove(kinematic_tree[0])
 
-        root = joint_positions[path[0]].copy()
+        root = origin_pos[path[0]].copy()
 
         last_position_state = joint_positions.copy()
         # stage1
@@ -211,17 +208,17 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations,
             vec1 = last_position_state[curr_index] - joint_positions[parent_index]
             vec2 = last_end - joint_positions[parent_index]
             rot = rodrigus_formula(vec1, vec2)
-            all_child_joint_start = get_all_child_joint(kinematic_tree, parent_index)
-            all_child_joint_end = get_all_child_joint(kinematic_tree, curr_index)
-            curr_bone_child = list(set(all_child_joint_start) - set(all_child_joint_end) - set([curr_index]))
+            all_child_joint_start = get_all_child_joint(kinematic_tree, curr_index)
+            all_child_joint_end = get_all_child_joint(kinematic_tree, parent_index)
+            curr_bone_child = list(set(all_child_joint_start) - set(all_child_joint_end) - set([parent_index]))
 
             # from IPython import embed
             # embed()
             if (kinematic_tree[curr_index] != joint_parent[curr_index]):
-                rot_joints = curr_bone_child + [curr_index]
+                rot_joints = curr_bone_child + [parent_index]
                 # print(curr_index, 'inverse')
             else:
-                rot_joints = curr_bone_child + [parent_index]
+                rot_joints = curr_bone_child + [curr_index]
 
             if 0 in old_path:
                 if curr_index in protected_ids and curr_index in path and len(path) - 1 - i >= old_path.index(0):
