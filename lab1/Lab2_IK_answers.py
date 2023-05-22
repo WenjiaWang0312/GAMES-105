@@ -112,7 +112,7 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations,
         return joint_positions, joint_orientations
 
     def fabrik(joint_positions, joint_orientations, joint_parent, path,
-               target_pose, out_of_stretch, origin_pos):
+               target_pose, out_of_stretch, origin_pos, joint_name):
         """
         递归函数，计算逆运动学
         输入:
@@ -142,14 +142,24 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations,
                     protected_ids.append(i)
         kinematic_tree[path[0]] = -1
             
-        # from IPython import embed
-        # embed()
         if kinematic_tree[0] in protected_ids:
             protected_ids.remove(kinematic_tree[0])
 
         root = origin_pos[path[0]].copy()
 
         last_position_state = joint_positions.copy()
+        if out_of_stretch:
+        
+            vec1 = joint_positions[path[-1]] - joint_positions[path[0]]
+            vec2 = target_pose - joint_positions[path[0]]
+            rot = rodrigus_formula(vec1, vec2)
+            joint_positions = (
+                rot[None] @ (joint_positions[:, :, None] -
+                            joint_positions[path[0]][None, :, None]) +
+                joint_positions[path[0]][None, :, None])[..., 0]
+
+            joint_orientations = rot[None] @ joint_orientations
+            return joint_positions, joint_orientations
         # stage1
         for i in range(len(path)-1):
         
@@ -174,7 +184,7 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations,
                 rot_joints = curr_bone_child + [parent_index]
 
             if 0 in old_path:
-                if curr_index in protected_ids and curr_index in path and len(path) - 1 - i >= old_path.index(0):
+                if curr_index in protected_ids and curr_index in path and len(path) - 1 - i <= old_path.index(0):
                     rot_joints = curr_bone_child
             pos_joints = curr_bone_child + [parent_index]
             # rot_joints = curr_bone_child + [parent_index]
@@ -221,8 +231,8 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations,
                 rot_joints = curr_bone_child + [curr_index]
 
             if 0 in old_path:
-                if curr_index in protected_ids and curr_index in path and len(path) - 1 - i >= old_path.index(0):
-                    rot_joints = curr_bone_child
+                if curr_index in protected_ids and curr_index in path and i <= old_path.index(0):
+                    rot_joints = curr_bone_child # [parent_index]
             pos_joints = curr_bone_child + [parent_index]
  
             curr_position_rotated = (
@@ -261,7 +271,7 @@ def part1_inverse_kinematics(meta_data, joint_positions, joint_orientations,
             #     path, target_pose, out_of_stretch)
             joint_positions, joint_orientations = fabrik(
                 joint_positions, joint_orientations, meta_data.joint_parent,
-                path, target_pose, out_of_stretch, meta_data.joint_initial_position)
+                path, target_pose, out_of_stretch, meta_data.joint_initial_position, meta_data.joint_name)
             # print(joint_positions[path[-1]] - target_pose, iter_idx)
     joint_orientations = R.from_matrix(joint_orientations).as_quat()
     return joint_positions, joint_orientations
